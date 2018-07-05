@@ -358,18 +358,21 @@ loadGSTemplate = function() {
       }
       else {
         var now = DateUtils.now();
-        this.sheet.getRange("A1:L2").setValues([
+        this.sheet.getRange("A1:N2").setValues([
           [
             "出勤", "出勤更新", "退勤", "退勤更新", "休暇", "休暇取消",
-            "出勤中", "出勤なし", "休暇中", "休暇なし", "出勤確認", "退勤確認"
+            "出勤中", "出勤なし", "休暇中", "休暇なし", "出勤確認", "退勤確認",
+            "リモート出勤", "リモート退勤", "欠勤中", "欠勤なし"
           ],
           [
             "<@#1> おはようございます (#2)", "<@#1> 出勤時間を#2へ変更しました",
             "<@#1> お疲れ様でした (#2)", "<@#1> 退勤時間を#2へ変更しました",
             "<@#1> #2を休暇として登録しました", "<@#1> #2の休暇を取り消しました",
-            "#1が出勤しています", "全員退勤しています",
+            "#1の#2人が出勤しています", "全員退勤しています",
             "#1は#2が休暇です", "#1に休暇の人はいません",
-            "今日は休暇ですか？ #1", "退勤しましたか？ #1"
+            "今日は休暇ですか？ #1", "退勤しましたか？ #1",
+            "<@#1> リモート勤務@#3を楽しんで下さい (#2)","<@#1> リモート勤務、お疲れ様でした (#2)",
+            "#1の#2人が欠勤しています","全員欠勤しています"
           ]
         ]);
       }
@@ -430,6 +433,8 @@ loadGSTimesheets = function () {
         { name: '日付' },
         { name: '出勤' },
         { name: '退勤' },
+        { name: 'リモート開始' },
+        { name: 'リモート終了' },
         { name: 'ノート' },
       ],
       properties: [
@@ -487,20 +492,22 @@ loadGSTimesheets = function () {
       return v === '' ? undefined : v;
     });
 
-    return({ user: username, date: row[0], signIn: row[1], signOut: row[2], note: row[3] });
+    return({ user: username, date: row[0], signIn: row[1], signOut: row[2], remoteIn: row[3], remoteOut: row[4], note: row[5] });
   };
 
   GSTimesheets.prototype.set = function(username, date, params) {
     var row = this.get(username, date);
-    _.extend(row, _.pick(params, 'signIn', 'signOut', 'note'));
+    _.extend(row, _.pick(params, 'signIn', 'signOut', 'remoteIn', 'remoteOut', 'note'));
 
     var sheet = this._getSheet(username);
     var rowNo = this._getRowNo(username, date);
 
-    var data = [DateUtils.toDate(date), row.signIn, row.signOut, row.note].map(function(v) {
+    var data = [DateUtils.toDate(date), row.signIn, row.signOut, row.remoteIn, row.remoteOut, row.note].map(function(v) {
       return v == null ? '' : v;
     });
     sheet.getRange("A"+rowNo+":"+String.fromCharCode(65 + this.scheme.columns.length - 1)+rowNo).setValues([data]);
+    sheet.getRange("A"+rowNo).setNumberFormat("YYYY/mm/dd");
+    sheet.getRange("B"+rowNo+":"+"E"+rowNo).setNumberFormat("YYYY/mm/dd HH:MM:ss");
 
     return row;
   };
@@ -740,12 +747,15 @@ loadTimesheets = function (exports) {
 
     // コマンド集
     var commands = [
-      ['actionSignOut', /(バ[ー〜ァ]*イ|ば[ー〜ぁ]*い|おやすみ|お[つっ]ー|おつ|さらば|お先|お疲|帰|乙|bye|night|(c|see)\s*(u|you)|退勤|ごきげんよ|グ[ッ]?バイ)/],
-      ['actionWhoIsOff', /(だれ|誰|who\s*is).*(休|やす(ま|み|む))/],
-      ['actionWhoIsIn', /(だれ|誰|who\s*is)/],
-      ['actionCancelOff', /(休|やす(ま|み|む)|休暇).*(キャンセル|消|止|やめ|ません)/],
-      ['actionOff', /(休|やす(ま|み|む)|休暇)/],
-      ['actionSignIn', /(モ[ー〜]+ニン|も[ー〜]+にん|おっは|おは|へろ|はろ|ヘロ|ハロ|hi|hello|morning|出勤)/],
+      ['actionSignOut', /ちゃげ.*(バ[ー〜ァ]*イ|ば[ー〜ぁ]*い|おやすみ|お[つっ]ー|おつ|さらば|お先|お疲|帰|乙|bye|night|(c|see)\s*(u|you)|退勤|ごきげんよ|グ[ッ]?バイ)/],
+      ['actionWhoIsOff', /ちゃげ.*(だれ|誰|who\s*is).*(休|やす(ま|み|む))/],
+      ['actionWhoIsOut', /ちゃげ.*(だれ|誰|who\s*is).*(いない|欠)/],
+      ['actionWhoIsIn', /ちゃげ.*(だれ|誰|who\s*is).*(いる|出)/],
+      ['actionCancelOff', /ちゃげ.*(休|やす(ま|み|む)|休暇).*(キャンセル|消|止|やめ|ません)/],
+      ['actionOff', /ちゃげ.*(休|やす(ま|み|む)|休暇)/],
+      ['actionSignIn', /ちゃげ.*(モ[ー〜]+ニン|も[ー〜]+にん|おっは|おは|へろ|はろ|ヘロ|ハロ|hi|hello|morning)/],
+      ['remoteSignIn', /ちゃげ.*(リモート開|リモート始|リモートはじめ)/],
+      ['remoteSignOut', /ちゃげ.*(リモート終|リモート完|リモートおわる)/],
       ['confirmSignIn', /__confirmSignIn__/],
       ['confirmSignOut', /__confirmSignOut__/],
     ];
@@ -762,7 +772,7 @@ loadTimesheets = function (exports) {
   }
 
   // 出勤
-  Timesheets.prototype.actionSignIn = function(username, message) {
+  Timesheets.prototype.actionSignIn = function(username, message, arg) {
     if(this.datetime) {
       var data = this.storage.get(username, this.datetime);
       if(!data.signIn || data.signIn === '-') {
@@ -780,12 +790,18 @@ loadTimesheets = function (exports) {
   };
 
   // 退勤
-  Timesheets.prototype.actionSignOut = function(username, message) {
+  Timesheets.prototype.actionSignOut = function(username, message, arg) {
     if(this.datetime) {
       var data = this.storage.get(username, this.datetime);
       if(!data.signOut || data.signOut === '-') {
         this.storage.set(username, this.datetime, {signOut: this.datetime});
         this.responder.template("退勤", username, this.datetimeStr);
+
+        // リモート退勤が空なら日付を埋める
+        if(!(!data.remoteIn || data.remoteIn === '-') && (!data.remoteOut || data.remoteOut === '-')) {
+          this.storage.set(username, this.datetime, {remoteOut: this.datetime});
+          this.responder.template("リモート退勤", username, this.datetimeStr);
+        }
       }
       else {
         // 更新の場合は時間を明示する必要がある
@@ -797,8 +813,34 @@ loadTimesheets = function (exports) {
     }
   };
 
+  // リモート出勤
+  Timesheets.prototype.remoteSignIn = function(username, message, arg) {
+    if(this.datetime) {
+      var data = this.storage.get(username, this.datetime);
+      if(!data.remoteIn || data.remoteIn === '-') {
+        // 場所(@xxx)を抜き出す
+        //var place = message.replace(/[^@]*@(.*?)/,"$1"); //match(/@.+/); //
+        var arg = message.match(/[^@]*@.+/) ? message.replace(/[^@]*@(.+?)/,"$1") : "";
+
+        this.storage.set(username, this.datetime, {remoteIn: this.datetime, note: arg});
+        this.responder.template("リモート出勤", username, this.datetimeStr, arg);
+      }
+    }
+  };
+
+  // リモート退勤
+  Timesheets.prototype.remoteSignOut = function(username, message, arg) {
+    if(this.datetime) {
+      var data = this.storage.get(username, this.datetime);
+      if(!data.remoteOut || data.remoteOut === '-') {
+        this.storage.set(username, this.datetime, {remoteOut: this.datetime});
+        this.responder.template("リモート退勤", username, this.datetimeStr);
+      }
+    }
+  };
+
   // 休暇申請
-  Timesheets.prototype.actionOff = function(username, message) {
+  Timesheets.prototype.actionOff = function(username, message, arg) {
     if(this.date) {
       var dateObj = new Date(this.date[0], this.date[1]-1, this.date[2]);
       var data = this.storage.get(username, dateObj);
@@ -810,7 +852,7 @@ loadTimesheets = function (exports) {
   };
 
   // 休暇取消
-  Timesheets.prototype.actionCancelOff = function(username, message) {
+  Timesheets.prototype.actionCancelOff = function(username, message, arg) {
     if(this.date) {
       var dateObj = new Date(this.date[0], this.date[1]-1, this.date[2]);
       var data = this.storage.get(username, dateObj);
@@ -822,7 +864,7 @@ loadTimesheets = function (exports) {
   };
 
   // 出勤中
-  Timesheets.prototype.actionWhoIsIn = function(username, message) {
+  Timesheets.prototype.actionWhoIsIn = function(username, message, arg) {
     var dateObj = DateUtils.toDate(DateUtils.now());
     var result = _.compact(_.map(this.storage.getByDate(dateObj), function(row) {
       return _.isDate(row.signIn) && !_.isDate(row.signOut) ? row.user : undefined;
@@ -832,12 +874,27 @@ loadTimesheets = function (exports) {
       this.responder.template("出勤なし");
     }
     else {
-      this.responder.template("出勤中", result.sort().join(', '));
+      this.responder.template("出勤中", result.sort().join(', '), Object.keys(result).length);
+    }
+  };
+
+  // 欠勤中
+  Timesheets.prototype.actionWhoIsOut = function(username, message, arg) {
+    var dateObj = DateUtils.toDate(DateUtils.now());
+    var result = _.compact(_.map(this.storage.getByDate(dateObj), function(row) {
+      return !_.isDate(row.signIn) ? row.user : undefined;
+    }));
+
+    if(_.isEmpty(result)) {
+      this.responder.template("欠勤なし");
+    }
+    else {
+      this.responder.template("欠勤中", result.sort().join(', '), Object.keys(result).length);
     }
   };
 
   // 休暇中
-  Timesheets.prototype.actionWhoIsOff = function(username, message) {
+  Timesheets.prototype.actionWhoIsOff = function(username, message, arg) {
     var dateObj = DateUtils.toDate(DateUtils.now());
     var dateStr = DateUtils.format("Y/m/d", dateObj);
     var result = _.compact(_.map(this.storage.getByDate(dateObj), function(row){
@@ -863,7 +920,7 @@ loadTimesheets = function (exports) {
   };
 
   // 出勤していない人にメッセージを送る
-  Timesheets.prototype.confirmSignIn = function(username, message) {
+  Timesheets.prototype.confirmSignIn = function(username, message, arg) {
     var self = this;
     var holidays = _.compact(_.map((this.settings.get("休日") || "").split(','), function(s) {
       var date = DateUtils.parseDateTime(s);
@@ -874,24 +931,17 @@ loadTimesheets = function (exports) {
     // 休日ならチェックしない
     if(_.contains(holidays, DateUtils.format("Y/m/d",today))) return;
 
-    var wday = DateUtils.now().getDay();
-    var signedInUsers = _.compact(_.map(this.storage.getByDate(today), function(row) {
-      var signedIn = _.isDate(row.signIn);
-      var off = (row.signIn === '-') || _.contains(self.storage.getDayOff(row.user), wday);
-      return (signedIn || off) ? row.user : undefined;
+    var users = _.compact(_.map(this.storage.getByDate(today), function(row) {
+      return !_.isDate(row.signIn) ? row.user : undefined;
     }));
-    var users = _.difference(this.storage.getUsers(), signedInUsers);
 
     if(!_.isEmpty(users)) {
       this.responder.template("出勤確認", users.sort());
     }
-
-    // バージョンチェックを行う
-    if(typeof checkUpdate == 'function') checkUpdate(this.responder);
   };
 
   // 退勤していない人にメッセージを送る
-  Timesheets.prototype.confirmSignOut = function(username, message) {
+  Timesheets.prototype.confirmSignOut = function(username, message, arg) {
     var dateObj = DateUtils.toDate(DateUtils.now());
     var users = _.compact(_.map(this.storage.getByDate(dateObj), function(row) {
       return _.isDate(row.signIn) && !_.isDate(row.signOut) ? row.user : undefined;
